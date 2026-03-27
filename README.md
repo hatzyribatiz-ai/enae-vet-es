@@ -74,6 +74,49 @@ When you change business rules or scheduling logic in `docs/`, update this READM
 
 ---
 
+## API (Chatbot v4)
+
+The **Chatbot v4** placeholder API is defined by `main.py`:
+
+- **GET /**: returns placeholder HTML for future UI.
+- **POST /ask_bot**: accepts `application/x-www-form-urlencoded` body (`msg`, `session_id`) and returns a JSON stub until LangChain is integrated.
+
+### Run the API
+
+```bash
+# Create venv and install dependencies
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+
+# Start uvicorn
+.venv/bin/uvicorn main:app --reload
+```
+
+Then:
+
+- Interactive docs: http://127.0.0.1:8000/docs
+- OpenAPI JSON: http://127.0.0.1:8000/openapi.json
+
+### Example requests
+
+```bash
+# GET home
+curl http://127.0.0.1:8000/
+
+# POST ask_bot (urlencoded)
+curl -X POST http://127.0.0.1:8000/ask_bot \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "msg=hello&session_id=s1"
+```
+
+Expected response:
+
+```json
+{"msg": "hello", "session_id": "s1", "placeholder": true}
+```
+
+---
+
 ## Cursor workflows
 
 - **Implement a Jira ticket**: Say *"Implement PROJ-123"* (or *@implement-jira-workflow implement PROJ-123*). The agent will read the ticket, plan from AC, ask questions if needed, develop using the **backend-langchain-vet** subagent, move the ticket to In Progress, open a PR with an AC-based description, and move the ticket to In Review. Full steps: [.cursor/commands/implement.md](.cursor/commands/implement.md).
