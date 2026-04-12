@@ -1,6 +1,8 @@
-"""Tests for main.py (VETES-16): Chatbot v4 placeholder API."""
+"""Tests for main.py: FastAPI + LangChain chatbot."""
 
 from __future__ import annotations
+
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -22,7 +24,9 @@ def test_get_home_returns_html(client: TestClient) -> None:
     assert "chatbot" in html_body.lower()
 
 
-def test_post_ask_bot_urlencoded_ok(client: TestClient) -> None:
+@patch("main.run_conversation", new_callable=AsyncMock)
+def test_post_ask_bot_urlencoded_ok(mock_run: AsyncMock, client: TestClient) -> None:
+    mock_run.return_value = "Thank you for your question about scheduling."
     resp = client.post(
         "/ask_bot",
         content=b"msg=hello&session_id=s1",
@@ -32,7 +36,8 @@ def test_post_ask_bot_urlencoded_ok(client: TestClient) -> None:
     data = resp.json()
     assert data["msg"] == "hello"
     assert data["session_id"] == "s1"
-    assert data["placeholder"] is True
+    assert data["reply"] == "Thank you for your question about scheduling."
+    mock_run.assert_awaited_once_with("s1", "hello")
 
 
 def test_post_ask_bot_missing_msg(client: TestClient) -> None:
@@ -66,6 +71,15 @@ def test_post_ask_bot_empty_body(client: TestClient) -> None:
     resp = client.post(
         "/ask_bot",
         content=b"",
+        headers={"content-type": "application/x-www-form-urlencoded"},
+    )
+    assert resp.status_code == 422
+
+
+def test_post_ask_bot_invalid_utf8_body(client: TestClient) -> None:
+    resp = client.post(
+        "/ask_bot",
+        content=b"msg=\xff&session_id=s1",
         headers={"content-type": "application/x-www-form-urlencoded"},
     )
     assert resp.status_code == 422
