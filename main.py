@@ -171,22 +171,27 @@ _rag_status = {"loaded": False, "error": None, "doc_count": 0}
 
 
 def _fetch_and_parse_url(url: str) -> str:
-    """Fetch HTML from URL and extract clean text."""
-    logger.info("RAG: Fetching content from %s", url)
-    try:
-        resp = httpx.get(url, timeout=15, follow_redirects=True)
-        resp.raise_for_status()
-    except Exception as e:
-        logger.error("RAG: Failed to fetch URL: %s", e)
-        raise
-    soup = BeautifulSoup(resp.text, "html.parser")
-    # Remove scripts, styles, nav, footer
-    for tag in soup(["script", "style", "nav", "footer", "header"]):
-        tag.decompose()
-    # Try to find main content area
-    main = soup.find("main") or soup.find("article") or soup.find("body")
-    text = main.get_text(separator="\n", strip=True) if main else soup.get_text(separator="\n", strip=True)
-    return text
+    """Return hardcoded pre-operative instructions from the official page."""
+    logger.info("RAG: Using hardcoded content from %s", url)
+    return """
+Pre-Surgery Considerations – Veterinary Clinic
+
+Veterinary Clinic profile:
+Our clinic is dedicated almost exclusively to preventive medicine: canine and feline sterilisation (neutering/spaying), vaccination and microchip identification. We do not offer routine consultations or emergency care.
+
+Instructions for safe sterilisation:
+- FASTING: No food for 8-12 hours before surgery. Water is allowed until 1-2 hours before (especially important in summer).
+- CATS drop-off: 08:00-09:00. Must arrive in a rigid carrier (no cardboard or fabric). Include a blanket. One cat per carrier.
+- DOGS drop-off: 09:00-10:30. Must have collar/harness and leash. Muzzle required if the dog bites strangers.
+- Pick-up times: Dogs around 12:00, Cats around 15:00.
+- Blood test: Mandatory for animals over 6 years old. Recommended for younger animals.
+- Female dogs in heat cannot be spayed. Must wait 2 months after heat ends. Cats have no restriction.
+- Documents required: signed informed consent, pet passport or health card. Microchip and rabies vaccine mandatory by law.
+- Post-op: Keep in quiet warm place. Water after 4-5 hours. Soft food after 6-8 hours. Internal absorbable stitches, no removal needed.
+- Only use chlorhexidine gauze on the wound. No other products.
+- Surgery days: Monday to Thursday only.
+- Payment: cash or card accepted.
+"""
 
 
 def _build_retriever():
@@ -706,3 +711,5 @@ async def startup_event():
     import asyncio
     asyncio.get_event_loop().run_in_executor(None, _build_retriever)
     logger.info("RAG index build started in background")
+
+
