@@ -1,124 +1,237 @@
-# enae-vet-es
+# enae-vet-es — Veterinary Clinic Chatbot
 
-Veterinary clinic chatbot and booking assistant (ENAE case study). This document gives new developers and stakeholders a single entry point to understand the tech stack, the main workflow, and how it relates to the docs in `docs/`.
+Chatbot MVP for a veterinary clinic specialising in **sterilisation and castration** scheduling. Built as a case study for ENAE Business School — *Data Science e IA para la Toma de Decisiones*.
 
----
-
-## Technologies
-
-The project uses (or is designed to use) the following technologies. Their roles are summarised here; see `.cursor/skills/langchain-vet-chatbots/SKILL.md` and `.cursor/agents/backend-langchain-vet.md` for implementation guidance.
-
-| Technology | Role |
-|------------|------|
-| **Python** | Backend language; services, APIs, and LangChain chains/agents. |
-| **LangChain** | Orchestration and conversation: system prompts, tools (e.g. appointments, patient lookup), RAG over clinic protocols, and conversation memory. |
-| **FastAPI** | HTTP backend and API layer for the bot and any REST endpoints. |
-| **Session store** | Conversation and session handling (e.g. per-client or per-session state). |
-| **Frontend / channel** | User-facing channel for the bot (e.g. web chat, WhatsApp); exact choice depends on implementation. |
-
-The bot does not diagnose or prescribe; it supports scheduling, FAQs, and internal procedures, and cites tools or retrieved documents when giving procedural information.
+**Team**: Hachi  
+**Repo**: `enae-vet-es` (fork of `kuuli/veterinary-clinic-chatbot`)  
+**Jira**: *URL: pendiente*
 
 ---
 
-## Workflow
+## What's implemented
 
-The main flow from conversation to confirmed appointment is as follows.
+| Feature | Ticket | Status |
+|---------|--------|--------|
+| FastAPI with 2 endpoints + Swagger | VET-7 | Done |
+| Chat UI (HTML) | VET-8 | Done |
+| LangChain + system prompt | VET-9 | Done |
+| Conversation memory per `session_id` | VET-10 | Done |
+| RAG from official URL | VET-11 | Done |
+| Tool: check_availability (mock) | VET-12 | Done |
+| Intents catalog (20 intents) | VET-5 | Done |
+| Vercel deploy | VET-3 | Pendiente |
+| Jira board | VET-4 | Pendiente |
 
-1. **Conversation → intent and slot filling**  
-   The user talks to the bot; the bot identifies intent and collects required slots (e.g. species, date, client/patient details).
+---
 
-2. **Day-only selection**  
-   The user selects a **day** for the appointment. The bot does **not** ask the user to choose a specific surgical time; times are managed internally.
+## Quick start (local)
 
-3. **Capacity rules**  
-   - **240-minute quota**: Total minutes already occupied on the day plus the new appointment’s duration must not exceed 240 minutes.  
-   - **Dog limit**: A maximum number of dogs per day is enforced (see business rules in `docs/` when available).  
-   - **Service times**: Procedure durations and service times come from the master table / business configuration.
+```bash
+# 1. Clone the repo
+git clone https://github.com/<your-user>/enae-vet-es.git
+cd enae-vet-es
 
-4. **Species-specific drop-off windows**  
-   - **Cats**: drop-off window 08:00–09:00.  
-   - **Dogs**: drop-off window 09:00–10:30.  
-   The bot uses these windows for messaging and instructions; surgical times are not shown to the client.
+# 2. Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
 
-5. **Confirmation**  
-   On confirmation, the client receives:  
-   - Drop-off instructions (time window and any species-specific guidance).  
-   - Fasting protocol (e.g. last meal 8–12 hours before; water until 1–2 hours before, as per clinic policy).  
-   Surgical times remain internal; the communication protocol is to emphasise drop-off and fasting, not specific surgery slots.
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Configure environment
+cp .env.example .env
+# Edit .env and add your OpenAI API key:
+#   OPENAI_API_KEY=sk-proj-...
+
+# 5. Start the server
+uvicorn main:app --reload
+```
+
+Then open:
+
+- **Chat UI**: http://127.0.0.1:8000/
+- **Swagger docs**: http://127.0.0.1:8000/docs
+- **Health check**: http://127.0.0.1:8000/health
+
+### Example API call
+
+```bash
+# JSON format
+curl -X POST http://127.0.0.1:8000/ask_bot \
+  -H "Content-Type: application/json" \
+  -d '{"msg": "Hi, what can you help me with?", "session_id": "test1"}'
+
+# Form-encoded format
+curl -X POST http://127.0.0.1:8000/ask_bot \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "msg=Hello&session_id=test1"
+```
+
+---
+
+## Environment variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `OPENAI_API_KEY` | Yes | OpenAI API key (never commit this) |
+| `OPENAI_CHAT_MODEL` | No | Model name (default: `gpt-4o-mini`) |
+
+A `.env.example` file is provided as a template. Copy it to `.env` and fill in your key.
+
+---
+
+## Architecture
+
+```
+main.py              ← FastAPI app (endpoints, LLM chain, RAG, tool)
+api/index.py         ← Vercel serverless entry point
+requirements.txt     ← Python dependencies
+vercel.json          ← Vercel build config
+.env.example         ← Environment template
+docs/
+  intents-catalog.md ← 20 intents with descriptions and conversation mapping
+  jira/              ← Enriched ticket specs
+```
+
+### System prompt
+
+The system prompt in `main.py` contains all the domain knowledge from the case study: clinic scope, drop-off/pick-up times, fasting rules, blood test policy, heat restrictions, transport requirements, post-op care, cancellation policy, and scheduling rules. This knowledge can also come from the RAG pipeline — both sources are compatible and may overlap.
+
+### Conversation memory
+
+Each `session_id` gets its own `InMemoryChatMessageHistory` via LangChain's `RunnableWithMessageHistory`. This means the bot remembers context within a session (e.g., if the user said "cat" in turn 1, it won't re-ask in turn 3).
+
+---
+
+## RAG pipeline (VET-11)
+
+The RAG pipeline retrieves information from the official pre-operative instructions page.
+
+**Source URL**: https://veterinary-clinic-teal.vercel.app/en/docs/instructions-before-operation
+
+### How it works
+
+1. **Fetch**: On startup, the app fetches the HTML from the official URL using `httpx`.
+2. **Parse**: `BeautifulSoup` extracts clean text from the page (strips nav, scripts, styles).
+3. **Chunk**: `RecursiveCharacterTextSplitter` splits the text into ~500-character chunks with 100-char overlap.
+4. **Embed**: `OpenAIEmbeddings` converts each chunk into a vector.
+5. **Index**: `FAISS` stores the vectors in an in-memory index.
+6. **Retrieve**: For each user message, the top 4 most similar chunks are retrieved and injected into the system prompt as context.
+
+### Verification
+
+Check RAG status via the health endpoint:
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+Expected response:
+```json
+{
+  "status": "ok",
+  "rag_loaded": true,
+  "rag_chunks": 12,
+  "rag_error": null
+}
+```
+
+### Test questions for RAG
+
+- "How long should my pet fast before surgery?" → Should mention 8–12 hours food, 1–2 hours water.
+- "What should I bring on surgery day?" → Consent form, pet documentation, carrier for cats.
+- "What do I do if my pet vomits after surgery?" → Normal on day of surgery, don't worry.
+
+---
+
+## Tool: check_availability (VET-12)
+
+A mock tool that the LLM can invoke when the user asks about scheduling availability.
+
+### What it does
+
+The `check_availability` function returns a simulated weekly schedule with:
+
+- **Surgery days**: Monday to Thursday only.
+- **Daily budget**: 240 minutes maximum.
+- **Dog limit**: Maximum 2 dogs per day.
+- **Durations**: Dog ≈ 60 min, Cat ≈ 30 min.
+
+### Mock data assumptions
+
+The mock generates a schedule for the upcoming Mon–Thu with pre-set bookings:
+
+| Day | Dogs booked | Cats booked | Minutes used | Can accept dog? | Can accept cat? |
+|-----|-------------|-------------|--------------|-----------------|-----------------|
+| Monday | 1 | 2 | 120/240 | Yes (1 slot) | Yes |
+| Tuesday | 2 | 1 | 150/240 | No (limit) | Yes |
+| Wednesday | 0 | 0 | 0/240 | Yes (2 slots) | Yes |
+| Thursday | 1 | 0 | 60/240 | Yes (1 slot) | Yes |
+
+### How the LLM invokes it
+
+The tool is registered via OpenAI function calling (`bind_tools`). When the user asks about availability, the LLM decides to call `check_availability(species, preferred_day?)` and receives the schedule data, then formulates a natural-language response.
+
+### Example invocation log
+
+```
+Tool call: check_availability({"species": "cat"})
+→ Returns JSON with available days and capacity per day
+```
+
+---
+
+## Intents (VET-5)
+
+See [`docs/intents-catalog.md`](docs/intents-catalog.md) for the full catalog of 20 intents with descriptions, example utterances, expected behaviour, and a mapping from each of the 10 acceptance conversations to its primary intents.
+
+---
+
+## Vercel deployment (VET-3)
+
+The project is configured for Vercel deployment:
+
+- `vercel.json` routes all requests to `main.py` via `@vercel/python`.
+- `api/index.py` re-exports the FastAPI app.
+- Environment variables (`OPENAI_API_KEY`) must be set in the Vercel dashboard — never in the repo.
+
+**Deploy URL**: *pendiente*
+
+Steps to deploy:
+
+1. Connect repo to Vercel (import from GitHub).
+2. Set `OPENAI_API_KEY` in Vercel Environment Variables.
+3. Deploy. The build uses `@vercel/python` with `requirements.txt`.
+4. Verify: open the Vercel URL → chat UI should load, `/health` should return OK.
+
+---
+
+## Acceptance conversations
+
+The chatbot is validated against 10 acceptance conversations defined in the course material:
+
+| Conv. | Theme | Key test |
+|-------|-------|----------|
+| 1 | Greeting & scope | Welcomes; rejects general consults |
+| 2 | Drop-off windows | Cat 08–09, dog 09–10:30; memory (species switch) |
+| 3 | Blood test / age | Mandatory >6 years; recommended otherwise |
+| 4 | Emergency | Redirects to emergency vet immediately |
+| 5 | Heat restriction | Rejects spay for dog in heat; 2-month wait |
+| 6 | Pick-up times | Dog ~12:00, cat ~15:00; memory (species switch) |
+| 7 | Human handoff | Provides phone/WhatsApp escalation |
+| 8 | Availability (tool) | Invokes tool; shows concrete days |
+| 9 | Capacity (tool) | 2-dog limit; suggests alternatives |
+| 10 | Pre-op fasting (RAG) | Fasting rules from RAG/prompt |
+
+Conversations 1–7 = base 5 points (memory + domain, no tool).  
+Conversations 8–9 = +1 point (tool de disponibilidad).  
+Conversation 10 = +1 point (RAG pipeline).
 
 ---
 
 ## Docs overview
 
-Documentation in `docs/` is the single source of truth for business rules, scheduling logic, and pre-surgery considerations. The README stays aligned with these files.
-
-| Document | Contents | When to use it |
-|----------|----------|----------------|
-| **`docs/pre-operative-considerations.md`** | Clinic profile (preventive care, sterilisation, vaccinations, no routine consultations or emergencies), pre-surgery instructions (fasting, transport, consent, pick-up times), and post-op care. Language: Spanish. | Understanding clinic scope, pre-op and post-op instructions, and client-facing messaging (e.g. RAG or confirmation text). |
-| **Business rules / scheduling** | When present in `docs/` (e.g. `business-rules.md`), quota rules, service times, dog limit, drop-off windows, and communication protocol. | Implementing or verifying booking logic, capacity checks, and messaging rules. |
-| **`docs/jira/`** | Groomed Jira exports: enriched ticket specs and before/after examples (e.g. `VETES-14-enriched.md`). | Tracing backlog decisions and onboarding to the **enrich** workflow. |
-
-If you add new docs (e.g. `business-rules.md`, `considerations.md`), add a row here and keep the README consistent with them.
-
----
-
-## Consistency
-
-The README is written so that:
-
-- **Quota and capacity**: The 240-minute rule and dog limit described in the Workflow section match the rules in `docs/` (and in any `.cursor/rules` that encode them).  
-- **Service and drop-off times**: Species-specific drop-off windows (cats 08:00–09:00, dogs 09:00–10:30) and the use of a master table for service times align with the docs.  
-- **Communication protocol**: Hiding surgical times and showing drop-off and fasting on confirmation is consistent with `docs/pre-operative-considerations.md` and any business-rules or considerations docs in `docs/`.
-
-When you change business rules or scheduling logic in `docs/`, update this README so there are no contradictions.
-
----
-
-## API (Chatbot v4)
-
-The **Chatbot v4** placeholder API is defined by `main.py`:
-
-- **GET /**: returns placeholder HTML for future UI.
-- **POST /ask_bot**: accepts `application/x-www-form-urlencoded` body (`msg`, `session_id`) and returns a JSON stub until LangChain is integrated.
-
-### Run the API
-
-```bash
-# Create venv and install dependencies
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-
-# Start uvicorn
-.venv/bin/uvicorn main:app --reload
-```
-
-Then:
-
-- Interactive docs: http://127.0.0.1:8000/docs
-- OpenAPI JSON: http://127.0.0.1:8000/openapi.json
-
-### Example requests
-
-```bash
-# GET home
-curl http://127.0.0.1:8000/
-
-# POST ask_bot (urlencoded)
-curl -X POST http://127.0.0.1:8000/ask_bot \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "msg=hello&session_id=s1"
-```
-
-Expected response:
-
-```json
-{"msg": "hello", "session_id": "s1", "placeholder": true}
-```
-
----
-
-## Cursor workflows
-
-- **Implement a Jira ticket**: Say *"Implement PROJ-123"* (or *@implement-jira-workflow implement PROJ-123*). The agent will read the ticket, plan from AC, ask questions if needed, develop using the **backend-langchain-vet** subagent, move the ticket to In Progress, open a PR with an AC-based description, and move the ticket to In Review. Full steps: [.cursor/commands/implement.md](.cursor/commands/implement.md).
-
-- **Enrich / groom a Jira ticket**: Say *"Enrich VETES-1"* or *"/enrich PROJ-123"*. The agent loads the issue, refines it in phases (diagnosis, structure, acceptance criteria, delivery readiness) using the **product-manager** agent and **product-manager-ticket-enrichment** skill, then consolidates an artifact; publishing back to Jira requires your explicit approval. Example output: [`docs/jira/VETES-14-before-after-example.md`](docs/jira/VETES-14-before-after-example.md). Full steps: [.cursor/commands/enrich.md](.cursor/commands/enrich.md).
+| Document | Contents |
+|----------|----------|
+| [`docs/intents-catalog.md`](docs/intents-catalog.md) | 20 intents + conversation mapping |
+| [`docs/jira/`](docs/jira/) | Enriched ticket specs and examples |
