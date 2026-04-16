@@ -4,7 +4,8 @@ Chatbot MVP for a veterinary clinic specialising in **sterilisation and castrati
 
 **Team**: Hachi  
 **Repo**: `enae-vet-es` (fork of `kuuli/veterinary-clinic-chatbot`)  
-**Jira**: *URL: pendiente*
+**Jira**: https://hatzyribatiz.atlassian.net/jira/software/projects/ENAE/boards/2
+
 
 ---
 
@@ -19,8 +20,8 @@ Chatbot MVP for a veterinary clinic specialising in **sterilisation and castrati
 | RAG from official URL | VET-11 | Done |
 | Tool: check_availability (mock) | VET-12 | Done |
 | Intents catalog (20 intents) | VET-5 | Done |
-| Vercel deploy | VET-3 | Pendiente |
-| Jira board | VET-4 | Pendiente |
+| Vercel deploy | VET-3 | Done |
+| Jira board | VET-4 | Done |
 
 ---
 
@@ -28,7 +29,7 @@ Chatbot MVP for a veterinary clinic specialising in **sterilisation and castrati
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/<your-user>/enae-vet-es.git
+git clone https://github.com/hatzyribatiz-ai/enae-vet-es.git
 cd enae-vet-es
 
 # 2. Create virtual environment
@@ -195,7 +196,8 @@ The project is configured for Vercel deployment:
 - `api/index.py` re-exports the FastAPI app.
 - Environment variables (`OPENAI_API_KEY`) must be set in the Vercel dashboard — never in the repo.
 
-**Deploy URL**: *pendiente*
+**Deploy URL**: https://enae-vet-es-weld.vercel.app
+
 
 Steps to deploy:
 
