@@ -489,12 +489,14 @@ async def _process_message(session_id: str, user_msg: str) -> str:
                 f"[Tool result from check_availability]:\n{tool_context}\n\n"
                 "Based on this availability data, provide a helpful response "
                 "to the user. Mention specific available days and any "
-                "constraints. Be concise."
+                "constraints. Be concise. Always respond in Spanish."
+                
             )
             followup_response = chain.invoke(
                 {"input": followup_msg, "system_prompt": system},
-                config=config,
+                config={"configurable": {"session_id": session_id + "_tool"}},
             )
+
             return (
                 followup_response.content
                 if hasattr(followup_response, "content")
